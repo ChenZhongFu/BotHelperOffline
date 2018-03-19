@@ -220,13 +220,15 @@ def isable_train(request):
             if classify_score_old[1] < classify_score_train[1]:
                 os.remove(classify_m_info[0].offline_url)
                 os.rename(classify_train_cache_path, classify_m_info[0].offline_url)
-                ####################
                 trans_model(classify_m_info[0].offline_url, app_id)
                 print("发送模型") 
-                ModelInfo.objects.filter(app_id=app_id, is_online=1).update(online_url=online_path+'classify'+str(app_id)+".h5",is_replace=1)                    
+                ModelInfo.objects.filter(app_id=app_id, is_online=1).update(online_url=online_path+'classify'+str(app_id)+".h5",is_replace=1)
             else:
                 os.remove(classify_train_cache_path)
         else:
+            trans_model(classify_m_info[0].offline_url, app_id)
+            print("发送模型")
+            ModelInfo.objects.filter(app_id=app_id, is_online=1).update(online_url=online_path + 'classify' + str(app_id) + ".h5", is_replace=1)
             os.remove(classify_m_info[0].offline_url)
             os.rename(classify_train_cache_path, classify_m_info[0].offline_url)
 
@@ -329,6 +331,9 @@ def total_train(request):
             else:
                 os.remove(classify_train_cache_path)
         else:
+            trans_model(classify_m_info[0].offline_url, app_id)
+            print("发送模型")
+            ModelInfo.objects.filter(app_id=app_id, is_online=1).update(online_url=online_path + 'classify' + str(app_id) + "1.h5", is_replace=1)
             os.remove(classify_m_info[0].offline_url)
             os.rename(classify_train_cache_path, classify_m_info[0].offline_url)
 
@@ -498,7 +503,9 @@ def classNumChangedInit(request):
     total = Model(inputs=total_input, outputs=out)
     sgd = SGD(lr=0.003, decay=1e-6, momentum=0.9, nesterov=True)
     total.compile(optimizer=sgd, loss='categorical_crossentropy', metrics=["accuracy"])
-    classify_url = old_model.offline_url[:-3]+'.h5'
+    classify_url = old_model[0].offline_url
+    if os.path.exists(classify_url):
+        os.remove(classify_url)
     total.save(classify_url)
     del total
     return JsonResponse({'retCode': '0', 'retDesc': '更新模型成功','classify':classify_url})
