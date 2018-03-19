@@ -341,7 +341,7 @@ def trans_model(local_path,appId):
     username='root'
     password='root!@#456'
 
-    remote_path='/home/bothelper/BotHelper/'+"classify"+str(appId)+".h5"
+    remote_path='/home/bothelper/BotHelper/'+"classify"+str(appId)+"1.h5"
 
     trans = paramiko.Transport((ip,port))
     trans.connect(username=username,password=password)
@@ -440,6 +440,68 @@ def train_model(app_id):
         os.rename(classify_train_cache_path, classify_m_info[0].offline_url)
 
     #ModelInfo.objects.filter(id=classify_m_info[0].id).update(is_training=0)
+
+
+def classNumChangedInit(request):
+    # 接收参数
+    app_id = request.GET.get('appId', '-1')
+    nb_class = request.GET.get('classNum','-1')
+
+    if nb_class == '-1' or app_id == '-1':
+        return JsonResponse({'retCode': '1000', 'retDesc': '参数错误'})
+
+    old_model=ModelInfo.objects.filter(app_id=app_id,is_online=0)
+    if not old_model:
+        return JsonResponse({'retCode': '1001', 'retDesc': '请先初始化知识库'})
+
+    # build model
+    with open(BASE_DIR+'embedding.pkl', 'rb') as vocab:
+        embedding_matrix = pickle.load(vocab)
+    nb_words = len(embedding_matrix)
+    embedding_layer1 = Embedding(input_dim=nb_words,
+                                 output_dim=embedding_dim,
+                                 weights=[embedding_matrix],
+                                 input_length=classify_sequence_length,
+                                 trainable=False)
+    embedding_layer2 = Embedding(input_dim=nb_words,
+                                 output_dim=embedding_dim,
+                                 weights=[embedding_matrix],
+                                 input_length=classify_sequence_length,
+                                 trainable=True)
+    total_input = Input(shape=(classify_sequence_length,))
+    model1 = embedding_layer1(total_input)
+    model1 = Reshape((classify_sequence_length, 100, 1))(model1)
+
+    model2 = embedding_layer2(total_input)
+    model2 = Reshape((classify_sequence_length, 100, 1))(model2)
+
+    graph_in = concatenate(inputs=[model1,model2], axis=-1)
+
+
+    conv_1 = Conv2D(filters=128, kernel_size=(1,100), strides=(1, 1), padding='valid', activation='relu')(graph_in)
+    conv_2 = Conv2D(filters=128, kernel_size=(2,100), strides=(1, 1), padding='valid', activation='relu')(graph_in)
+    conv_3 = Conv2D(filters=128, kernel_size=(3,100), strides=(1, 1), padding='valid', activation='relu')(graph_in)
+
+    conv_1 = MaxPooling2D(pool_size=(int(conv_1.get_shape()[1]), 1))(conv_1)
+    conv_2 = MaxPooling2D(pool_size=(int(conv_2.get_shape()[1]), 1))(conv_2)
+    conv_3 = MaxPooling2D(pool_size=(int(conv_3.get_shape()[1]), 1))(conv_3)
+    #conva = merge([conv_1, conv_2, conv_3], mode='concat', concat_axis=-1)
+    conva = concatenate(inputs=[conv_1,conv_2,conv_3], axis=-1)
+
+    # model-2
+    out = Reshape((3 * 128,))(conva)
+    #out = Dense(60, activation='relu', W_regularizer=l2(0.03))(out)
+    out = Dense(units=60, activation='relu', kernel_regularizer=regularizers.l2(0.01))(out)
+    out = Dropout(0.3)(out)
+    #out = Dense(5, activation='softmax')(out)
+    out = Dense(units=int(nb_class), activation='softmax')(out)
+    total = Model(inputs=total_input, outputs=out)
+    sgd = SGD(lr=0.003, decay=1e-6, momentum=0.9, nesterov=True)
+    total.compile(optimizer=sgd, loss='categorical_crossentropy', metrics=["accuracy"])
+    classify_url = old_model.offline_url[:-3]+'.h5'
+    total.save(classify_url)
+    del total
+    return JsonResponse({'retCode': '0', 'retDesc': '更新模型成功','classify':classify_url})
 
 
 

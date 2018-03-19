@@ -5,4 +5,5 @@ urlpatterns = [
     url(r'^trainAble', views.isable_train),
     url(r'^totaltrain',views.total_train),
     url(r'^coldStart', views.cold_start),
+    url(r'^updateModel',views.classNumChangedInit),
 ]
