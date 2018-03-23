@@ -142,13 +142,26 @@ def isable_train(request):
     app_id = request.GET.get('appId', '-1')
     if app_id == '-1':
         return JsonResponse({'retCode': '1000', 'message': '参数错误'})
-    # app_id = 0
-    has_training_model = ModelInfo.objects.filter(is_training=1, is_online=0)
-    if has_training_model:
-        return JsonResponse({'retCode': '1001', 'retDesc': '模型不可训练', 'isTrainAvailable': False})
+    # has_training_model = ModelInfo.objects.filter(is_training=1, is_online=0)
+    # if has_training_model:
+    #     return JsonResponse({'retCode': '1001', 'retDesc': '模型不可训练', 'isTrainAvailable': False})
     else:
         # train_thread=Thread(target=train_model, args=(app_id,))
         # train_thread.start()
+        global thread_count  # 线程队列计数
+        if (thread_count > 0 and thread_count<=3):
+            retcode = '00'
+            retstr = 'you are in the train queue,there have ' + str(thread_count) + ' models training ......'
+            # retstr='不给训练'
+            # return JsonResponse({'retCode': retcode, 'retDesc': retstr})
+        elif thread_count > 3:  # 最多4个线程在队列中:
+            return JsonResponse(
+                {'retCode': '000', 'retDesc': 'there have 4 threads in queue,please try after a few minitues!'})
+        else:
+            retcode = '0'
+            retstr = 'model is training......'
+
+
         start_time = datetime.datetime.today()
         # 获取训练数据
         para = {'appId': app_id}
@@ -163,11 +176,13 @@ def isable_train(request):
         else:
             return JsonResponse({'retCode': '1003', 'retDesc': '模型获得数据量为0'})
         # 创建线程类
-        import threading
         class Train_Thread(threading.Thread):
             def run(self):
+                global thread_count,lock
+                thread_count+=1
+                lock.acquire()
                 classify_m_info = ModelInfo.objects.filter(app_id=app_id, is_online=0)
-                ModelInfo.objects.filter(id=classify_m_info[0].id).update(is_training=1)
+                # ModelInfo.objects.filter(id=classify_m_info[0].id).update(is_training=1)
 
                 classify_train_cache_path = classify_m_info[0].offline_url[:-3] + 'train.h5'
                 with open(BASE_DIR + 'word_index.pkl', 'rb') as vocab:
@@ -205,6 +220,7 @@ def isable_train(request):
                 y_test = labels[-1 * nb_validation_samples:]
 
                 # 获取old model在测试集精度和损失
+                keras.backend.clear_session()#反复调用需要清除数据
                 classify_model = load_model(classify_m_info[0].offline_url)
                 classify_score_old = classify_model.evaluate(x_test, y_test)
 
@@ -262,13 +278,15 @@ def isable_train(request):
                     os.remove(classify_m_info[0].offline_url)
                     os.rename(classify_train_cache_path, classify_m_info[0].offline_url)
 
-                ModelInfo.objects.filter(id=classify_m_info[0].id).update(is_training=0)
+                # ModelInfo.objects.filter(id=classify_m_info[0].id).update(is_training=0)
+                lock.release()
+                thread_count-=1
                 return JsonResponse({'retCode': '10', 'retDesc': 'thread ok'})
 
         #创建线程
         train_thread = Train_Thread()
         train_thread.start()
-        return JsonResponse({'retCode': '0', 'retDesc': u'模型训练中......'})
+        return JsonResponse({'retCode': retcode, 'retDesc': retstr})
 
 
 def total_train(request):
